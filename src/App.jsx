@@ -1,66 +1,79 @@
 import { useState, useEffect } from "react"
 import { useAuth } from "./context/AuthContext"
+import { ToastProvider } from "./context/ToastContext"
 import { INITIAL_PAGE } from "./constants/nav"
 import AppShell from "./components/layout/AppShell"
 
-import LandingPage       from "./pages/LandingPage"
-import LoginPage         from "./pages/auth/LoginPage"
-import RegisterPage      from "./pages/auth/RegisterPage"
+import LandingPage        from "./pages/LandingPage"
+import LoginPage          from "./pages/auth/LoginPage"
+import RegisterPage       from "./pages/auth/RegisterPage"
+import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage"
+import ResetPasswordPage  from "./pages/auth/ResetPasswordPage"
+import ProfilePage        from "./pages/profile/ProfilePage"
 
-import OwnerDashboard    from "./pages/owner/OwnerDashboard"
-import OwnerItems        from "./pages/owner/OwnerItems"
-import OwnerItemForm     from "./pages/owner/OwnerItemForm"
-import OwnerRequests     from "./pages/owner/OwnerRequests"
-import OwnerReport       from "./pages/owner/OwnerReport"
+import OwnerDashboard  from "./pages/owner/OwnerDashboard"
+import OwnerItems      from "./pages/owner/OwnerItems"
+import OwnerItemForm   from "./pages/owner/OwnerItemForm"
+import OwnerRequests   from "./pages/owner/OwnerRequests"
+import OwnerReport     from "./pages/owner/OwnerReport"
 
-import RenterBrowse      from "./pages/renter/RenterBrowse"
-import RenterItemDetail  from "./pages/renter/RenterItemDetail"
-import RenterRequests    from "./pages/renter/RenterRequests"
+import RenterBrowse     from "./pages/renter/RenterBrowse"
+import RenterItemDetail from "./pages/renter/RenterItemDetail"
+import RenterRequests   from "./pages/renter/RenterRequests"
 
 import AdminDashboard    from "./pages/admin/AdminDashboard"
 import AdminUsers        from "./pages/admin/AdminUsers"
 import AdminTransactions from "./pages/admin/AdminTransactions"
 
-export default function App() {
+function AppInner() {
   const { user, loading: authLoading } = useAuth()
-  const [view, setView] = useState("landing")
-  const [page, setPage] = useState("owner-dash")
-  const [selectedItem, setSelectedItem]           = useState(null)
+  const [view, setView]                 = useState("landing")
+  const [page, setPage]                 = useState("owner-dash")
+  const [resetToken, setResetToken]     = useState(null)
+  const [selectedItem, setSelectedItem] = useState(null)
   const [selectedOwnerItem, setSelectedOwnerItem] = useState(null)
 
-  // FIX: on mount, if auth has restored a session from localStorage, jump straight to app
+  // On mount: check URL for a password-reset token
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const token  = params.get("token")
+    if (token) {
+      setResetToken(token)
+      setView("reset-password")
+      window.history.replaceState({}, "", window.location.pathname)
+    }
+  }, [])
+
+  // Restore session
   useEffect(() => {
     if (authLoading) return
     if (user) {
-      setPage(prev => {
-        // Only set initial page if still on the default — don't overwrite navigation
-        const validPages = Object.values(INITIAL_PAGE)
-        if (prev === "owner-dash" && !validPages.includes(prev)) return prev
-        return INITIAL_PAGE[user.role] || "renter-browse"
-      })
+      setPage(INITIAL_PAGE[user.role] || "renter-browse")
       setView("app")
     }
   }, [authLoading, user])
 
-  // Called by LoginPage on successful auth
   function handleAuthSuccess(normalizedUser) {
     setPage(INITIAL_PAGE[normalizedUser.role] || "renter-browse")
     setView("app")
   }
 
-  // Show nothing while auth is restoring from localStorage (prevents flash of landing)
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-      </div>
+        <div className="flex items-center justify-center h-screen">
+          <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+        </div>
     )
   }
 
-  if (view === "landing") return <LandingPage setView={setView} />
-  if (view === "login")    return <LoginPage setView={setView} onSuccess={handleAuthSuccess} />
-  if (view === "register") return <RegisterPage setView={setView} />
+  // ── Public views ──────────────────────────────────────────────────────────
+  if (view === "landing")         return <LandingPage setView={setView} />
+  if (view === "login")           return <LoginPage setView={setView} onSuccess={handleAuthSuccess} />
+  if (view === "register")        return <RegisterPage setView={setView} />
+  if (view === "forgot-password") return <ForgotPasswordPage setView={setView} />
+  if (view === "reset-password")  return <ResetPasswordPage  setView={setView} token={resetToken} />
 
+  // ── Authenticated shell ───────────────────────────────────────────────────
   function renderPage() {
     switch (page) {
       case "owner-dash":      return <OwnerDashboard setPage={setPage} />
@@ -74,13 +87,34 @@ export default function App() {
       case "admin-dash":      return <AdminDashboard setPage={setPage} />
       case "admin-users":     return <AdminUsers />
       case "admin-txn":       return <AdminTransactions />
-      default:                return <div className="text-stone-400 text-center py-20">Page not found</div>
+      case "profile":         return <ProfilePage />
+      default: return (
+          <div className="flex flex-col items-center justify-center py-32 text-center">
+            <span className="text-5xl mb-4">🗺️</span>
+            <p className="font-semibold text-stone-700 text-lg">Page not found</p>
+            <button
+                onClick={() => setPage(INITIAL_PAGE[user?.role] || "renter-browse")}
+                className="mt-4 text-sm text-orange-600 hover:underline"
+            >
+              Go to dashboard
+            </button>
+          </div>
+      )
     }
   }
 
   return (
-    <AppShell page={page} setPage={setPage} setView={setView}>
-      {renderPage()}
-    </AppShell>
+      <AppShell page={page} setPage={setPage} setView={setView}>
+        {renderPage()}
+      </AppShell>
+  )
+}
+
+// ToastProvider wraps the whole app so any page can call useToast()
+export default function App() {
+  return (
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
   )
 }

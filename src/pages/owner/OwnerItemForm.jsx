@@ -1,15 +1,17 @@
 import { useState, useEffect } from "react"
 import { ArrowLeft } from "lucide-react"
 import { useAuth } from "../../context/AuthContext"
-import { createItem, updateItem } from "../../api/items"
+import { createItem, updateItem, fetchCategories } from "../../api/items"
 import { Card, PrimaryBtn, GhostBtn } from "../../components/ui/Buttons"
 import Header from "../../components/layout/Header"
+
+const FALLBACK_CATEGORIES = ["Electronics","Tools","Outdoor","Sports","Music","Event Gear","Furniture","Other"]
 
 const EMPTY_FORM = {
   name: "", description: "", brand: "",
   height: "", width: "", depth: "", weight: "",
   category: "Electronics", quantity: 1, material: "",
-  schema: "Good",           // backend field name — displayed as "Condition" in UI
+  schema: "Good",
   rate: 0, deposit: 0,
   pickupMethod: "Self Pickup",
   availability: "Available",
@@ -20,11 +22,22 @@ const INPUT_CLS  = "w-full border border-stone-200 rounded-xl px-4 py-2.5 text-s
 const SELECT_CLS = "w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400"
 
 export default function OwnerItemForm({ setPage, selectedOwnerItem, setSelectedOwnerItem }) {
-  const { token, user } = useAuth()
-  const [form, setForm]             = useState(EMPTY_FORM)
+  const { token, user }   = useAuth()
+  const [form, setForm]   = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]           = useState("")
   const [imagePreviews, setImagePreviews] = useState([])
+
+  // ── Dynamic categories from API ─────────────────────────────────
+  const [categories, setCategories] = useState(FALLBACK_CATEGORIES)
+  useEffect(() => {
+    if (!token) return
+    fetchCategories(token)
+      .then(cats => {
+        if (cats?.length > 0) setCategories(cats)
+      })
+      .catch(() => { /* silently keep fallback */ })
+  }, [token])
 
   const editingId = selectedOwnerItem?.id ?? selectedOwnerItem?.itemID ?? selectedOwnerItem?.itemId ?? null
   const isEditing = Boolean(editingId)
@@ -32,22 +45,26 @@ export default function OwnerItemForm({ setPage, selectedOwnerItem, setSelectedO
   function field(key, value) { setForm(prev => ({ ...prev, [key]: value })) }
 
   // Cleanup blob URLs on unmount
-  useEffect(() => () => imagePreviews.forEach(p => URL.revokeObjectURL(p.url)), [])
+  useEffect(() => {
+    return () => imagePreviews.forEach(p => {
+      if (p.url?.startsWith("blob:")) URL.revokeObjectURL(p.url)
+    })
+  }, []) // eslint-disable-line
 
   // Populate form when editing
   useEffect(() => {
     if (!selectedOwnerItem) { setForm(EMPTY_FORM); setImagePreviews([]); return }
     setForm({
-      name:         selectedOwnerItem.name || "",
+      name:         selectedOwnerItem.name        || "",
       description:  selectedOwnerItem.description || selectedOwnerItem.desc || "",
-      brand:        selectedOwnerItem.brand || "",
-      height:       selectedOwnerItem.height || "",
-      width:        selectedOwnerItem.width || "",
-      depth:        selectedOwnerItem.depth || "",
-      weight:       selectedOwnerItem.weight || "",
-      category:     selectedOwnerItem.category || selectedOwnerItem.cat || "Electronics",
+      brand:        selectedOwnerItem.brand        || "",
+      height:       selectedOwnerItem.height       || "",
+      width:        selectedOwnerItem.width        || "",
+      depth:        selectedOwnerItem.depth        || "",
+      weight:       selectedOwnerItem.weight       || "",
+      category:     selectedOwnerItem.category     || selectedOwnerItem.cat || categories[0],
       quantity:     selectedOwnerItem.quantity ?? 1,
-      material:     selectedOwnerItem.material || "",
+      material:     selectedOwnerItem.material     || "",
       schema:       selectedOwnerItem.schema || selectedOwnerItem.condition || selectedOwnerItem.cond || "Good",
       rate:         selectedOwnerItem.rate ?? selectedOwnerItem.price ?? 0,
       deposit:      selectedOwnerItem.deposit ?? 0,
@@ -62,12 +79,13 @@ export default function OwnerItemForm({ setPage, selectedOwnerItem, setSelectedO
         url: img.startsWith("data:") || img.startsWith("http") ? img : `data:image/*;base64,${img}`,
       }))
     setImagePreviews(existing)
-  }, [selectedOwnerItem])
+  }, [selectedOwnerItem]) // eslint-disable-line
 
   function handleImages(e) {
     const files = Array.from(e.target.files || [])
     if (files.length > 3) { setError("Upload up to 3 images."); return }
-    imagePreviews.forEach(p => URL.revokeObjectURL(p.url))
+    // Revoke any existing blob URLs before replacing
+    imagePreviews.forEach(p => { if (p.url?.startsWith("blob:")) URL.revokeObjectURL(p.url) })
     setForm(prev => ({ ...prev, images: files }))
     setImagePreviews(files.map(f => ({ name: `${f.name}-${f.lastModified}`, url: URL.createObjectURL(f) })))
     setError("")
@@ -85,15 +103,24 @@ export default function OwnerItemForm({ setPage, selectedOwnerItem, setSelectedO
     setError("")
     try {
       const payload = {
-        ...form,
         name:        form.name.trim(),
         description: form.description.trim(),
         brand:       form.brand.trim(),
+        height:      form.height,
+        width:       form.width,
+        depth:       form.depth,
+        weight:      form.weight,
+        category:    form.category,
         quantity:    Number(form.quantity) || 1,
+        material:    form.material,
+        schema:      form.schema,
         rate:        Number(form.rate)     || 0,
         deposit:     Number(form.deposit)  || 0,
+        pickupMethod: form.pickupMethod,
+        availability: form.availability,
         ownerId:     user?.id ?? "",
       }
+      if (form.images.length > 0) payload.images = form.images
       if (isEditing) await updateItem(token, editingId, payload)
       else           await createItem(token, payload)
       goBack()
@@ -118,32 +145,37 @@ export default function OwnerItemForm({ setPage, selectedOwnerItem, setSelectedO
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">Name *</label>
-                <input value={form.name} onChange={e => field("name", e.target.value)} placeholder="e.g. Sony A7III Camera" className={INPUT_CLS} />
+                <input value={form.name} onChange={e => field("name", e.target.value)}
+                  placeholder="e.g. Sony A7III Camera" className={INPUT_CLS} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">Brand *</label>
-                <input value={form.brand} onChange={e => field("brand", e.target.value)} placeholder="e.g. Sony" className={INPUT_CLS} />
+                <input value={form.brand} onChange={e => field("brand", e.target.value)}
+                  placeholder="e.g. Sony" className={INPUT_CLS} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">Category *</label>
+                {/* ── Dynamic categories from GET /item/categories ── */}
                 <select value={form.category} onChange={e => field("category", e.target.value)} className={SELECT_CLS}>
-                  {["Electronics","Tools","Outdoor","Sports","Music","Event Gear","Furniture","Other"].map(c => <option key={c}>{c}</option>)}
+                  {categories.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-stone-700 mb-1.5">Description *</label>
-              <textarea value={form.description} onChange={e => field("description", e.target.value)} rows={4} placeholder="Describe the item, what is included, and any usage notes…" className={`${INPUT_CLS} resize-none`} />
+              <textarea value={form.description} onChange={e => field("description", e.target.value)}
+                rows={4} placeholder="Describe the item, what is included, and any usage notes…"
+                className={`${INPUT_CLS} resize-none`} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">Material</label>
-                <input value={form.material} onChange={e => field("material", e.target.value)} placeholder="e.g. Aluminum" className={INPUT_CLS} />
+                <input value={form.material} onChange={e => field("material", e.target.value)}
+                  placeholder="e.g. Aluminum" className={INPUT_CLS} />
               </div>
               <div>
-                {/* UI label = Condition, API field = schema */}
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">Condition</label>
                 <select value={form.schema} onChange={e => field("schema", e.target.value)} className={SELECT_CLS}>
                   {["Excellent","Like New","Good","Fair"].map(c => <option key={c}>{c}</option>)}
@@ -155,7 +187,8 @@ export default function OwnerItemForm({ setPage, selectedOwnerItem, setSelectedO
               {["height","width","depth","weight"].map(dim => (
                 <div key={dim}>
                   <label className="block text-sm font-medium text-stone-700 mb-1.5 capitalize">{dim}</label>
-                  <input value={form[dim]} onChange={e => field(dim, e.target.value)} placeholder={dim === "weight" ? "1.2 kg" : "10 cm"} className={INPUT_CLS} />
+                  <input value={form[dim]} onChange={e => field(dim, e.target.value)}
+                    placeholder={dim === "weight" ? "1.2 kg" : "10 cm"} className={INPUT_CLS} />
                 </div>
               ))}
             </div>
@@ -163,15 +196,18 @@ export default function OwnerItemForm({ setPage, selectedOwnerItem, setSelectedO
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">Quantity</label>
-                <input type="number" min="1" value={form.quantity} onChange={e => field("quantity", e.target.value)} className={INPUT_CLS} />
+                <input type="number" min="1" value={form.quantity}
+                  onChange={e => field("quantity", e.target.value)} className={INPUT_CLS} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">Rate (RM/day)</label>
-                <input type="number" min="0" step="0.01" value={form.rate} onChange={e => field("rate", e.target.value)} className={INPUT_CLS} />
+                <input type="number" min="0" step="0.01" value={form.rate}
+                  onChange={e => field("rate", e.target.value)} className={INPUT_CLS} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">Deposit (RM)</label>
-                <input type="number" min="0" step="0.01" value={form.deposit} onChange={e => field("deposit", e.target.value)} className={INPUT_CLS} />
+                <input type="number" min="0" step="0.01" value={form.deposit}
+                  onChange={e => field("deposit", e.target.value)} className={INPUT_CLS} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-stone-700 mb-1.5">Availability</label>
@@ -183,7 +219,8 @@ export default function OwnerItemForm({ setPage, selectedOwnerItem, setSelectedO
 
             <div>
               <label className="block text-sm font-medium text-stone-700 mb-1.5">Pickup Method</label>
-              <select value={form.pickupMethod} onChange={e => field("pickupMethod", e.target.value)} className={`${SELECT_CLS} max-w-xs`}>
+              <select value={form.pickupMethod} onChange={e => field("pickupMethod", e.target.value)}
+                className={`${SELECT_CLS} max-w-xs`}>
                 {["Self Pickup","Owner Delivery","Courier"].map(m => <option key={m}>{m}</option>)}
               </select>
             </div>
@@ -202,7 +239,9 @@ export default function OwnerItemForm({ setPage, selectedOwnerItem, setSelectedO
               )}
             </div>
 
-            {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+            {error && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+            )}
 
             <div className="flex gap-3 pt-5 border-t border-stone-100">
               <PrimaryBtn type="submit" disabled={submitting}>

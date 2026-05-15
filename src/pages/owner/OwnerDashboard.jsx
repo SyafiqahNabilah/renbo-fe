@@ -1,27 +1,73 @@
+import { useState, useEffect } from "react"
 import { Package, Inbox, TrendingUp, CheckCircle, ArrowUpRight, Plus, BarChart2 } from "lucide-react"
 import { useAuth } from "../../context/AuthContext"
 import { useData } from "../../hooks/useData"
+import { fetchOwnerSummary, fetchOwnerEarnings } from "../../api/reports"
 import { Card } from "../../components/ui/Buttons"
 import Header from "../../components/layout/Header"
 import Avatar from "../../components/ui/Avatar"
 import StatusBadge from "../../components/ui/StatusBadge"
 
-export default function OwnerDashboard({ setPage }) {
-  const { user } = useAuth()
-  const { transactions, loading } = useData()
+function firstOfMonth() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`
+}
+function today() { return new Date().toISOString().slice(0, 10) }
 
-  // Derive real counts from transaction data
-  // TODO Session 2: replace hardcoded active listings + earnings with real API data
-  const myTransactions  = transactions.filter(t => t.ownerName === user?.name)
-  const pendingCount    = myTransactions.filter(t => t.transactionStatus === "Pending").length
-  const completedCount  = myTransactions.filter(t => t.transactionStatus === "Completed").length
-  const recentRequests  = myTransactions.slice(0, 3)
+export default function OwnerDashboard({ setPage }) {
+  const { user, token }        = useAuth()
+  const { transactions, items, loading: dataLoading } = useData()
+
+  const [summary,        setSummary]        = useState(null)
+  const [monthEarnings,  setMonthEarnings]  = useState(null)
+  const [reportLoading,  setReportLoading]  = useState(true)
+
+  useEffect(() => {
+    if (!user?.id || !token) return
+    setReportLoading(true)
+    Promise.all([
+      fetchOwnerSummary(user.id, token),
+      fetchOwnerEarnings(user.id, firstOfMonth(), today(), token),
+    ])
+      .then(([sum, earn]) => { setSummary(sum); setMonthEarnings(earn) })
+      .catch(() => { /* silently degrade — stats show "—" */ })
+      .finally(() => setReportLoading(false))
+  }, [user?.id, token])
+
+  // Recent requests from transaction data
+  const myTransactions = transactions.filter(t => t.ownerName === user?.name)
+  const recentRequests = myTransactions.slice(0, 3)
+
+  // Active listings count from items
+  const activeListings = items?.filter(i => i.availability !== "RENTED").length ?? "—"
+
+  const thisMonthEarned = monthEarnings
+    ? `RM ${Number(monthEarnings.totalEarnings).toFixed(0)}`
+    : "—"
 
   const stats = [
-    { label: "Active Listings",    value: "—",           icon: Package,      change: "See My Items", color: "orange" },
-    { label: "Pending Requests",   value: String(pendingCount),   icon: Inbox,        change: pendingCount > 0 ? "Needs review" : "All clear", color: "amber"   },
-    { label: "This Month Earnings",value: "—",           icon: TrendingUp,   change: "See Earnings", color: "emerald" },
-    { label: "Completed Rentals",  value: String(completedCount), icon: CheckCircle,  change: "All time",     color: "blue"    },
+    {
+      label: "Active Listings",
+      value: reportLoading ? "…" : String(activeListings),
+      icon: Package, change: "See My Items", color: "orange",
+    },
+    {
+      label: "Pending Requests",
+      value: reportLoading ? "…" : String(summary?.pending ?? "—"),
+      icon: Inbox,
+      change: summary?.pending > 0 ? "Needs review" : "All clear",
+      color: "amber",
+    },
+    {
+      label: "This Month Earnings",
+      value: reportLoading ? "…" : thisMonthEarned,
+      icon: TrendingUp, change: "See Earnings", color: "emerald",
+    },
+    {
+      label: "Completed Rentals",
+      value: reportLoading ? "…" : String(summary?.completed ?? "—"),
+      icon: CheckCircle, change: "All time", color: "blue",
+    },
   ]
 
   const colorMap = {
@@ -31,7 +77,7 @@ export default function OwnerDashboard({ setPage }) {
     blue:    "bg-blue-50 text-blue-600",
   }
 
-  if (loading) return <div className="p-6 text-center text-stone-500">Loading dashboard…</div>
+  if (dataLoading) return <div className="p-6 text-center text-stone-500">Loading dashboard…</div>
 
   return (
     <div>
@@ -48,7 +94,9 @@ export default function OwnerDashboard({ setPage }) {
                 <ArrowUpRight className="w-3 h-3" />{s.change}
               </span>
             </div>
-            <p className="text-2xl font-bold text-stone-900">{s.value}</p>
+            <p className={`text-2xl font-bold ${reportLoading ? "text-stone-300 animate-pulse" : "text-stone-900"}`}>
+              {s.value}
+            </p>
             <p className="text-stone-500 text-xs mt-0.5">{s.label}</p>
           </Card>
         ))}
@@ -58,7 +106,12 @@ export default function OwnerDashboard({ setPage }) {
         <Card className="lg:col-span-2 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-stone-800">Recent Requests</h2>
-            <button onClick={() => setPage("owner-requests")} className="text-orange-600 text-xs font-semibold hover:underline">View all →</button>
+            <button
+              onClick={() => setPage("owner-requests")}
+              className="text-orange-600 text-xs font-semibold hover:underline"
+            >
+              View all →
+            </button>
           </div>
           {recentRequests.length === 0 ? (
             <p className="text-stone-400 text-sm text-center py-8">No requests yet.</p>
@@ -82,13 +135,22 @@ export default function OwnerDashboard({ setPage }) {
           <h2 className="font-semibold text-stone-800 mb-4">Quick Actions</h2>
           <div className="space-y-2">
             {[
-              { page: "owner-items",    icon: Plus,      bg: "bg-orange-100", ic: "text-orange-600", title: "Add New Item",      sub: "List something to rent" },
-              { page: "owner-requests", icon: Inbox,     bg: "bg-amber-100",  ic: "text-amber-600",  title: "Review Requests",   sub: `${pendingCount} pending approval` },
-              { page: "owner-report",   icon: BarChart2, bg: "bg-emerald-100",ic: "text-emerald-600",title: "View Earnings",     sub: "Monthly report" },
+              { page: "owner-items",    icon: Plus,      bg: "bg-orange-100",  ic: "text-orange-600",  title: "Add New Item",    sub: "List something to rent" },
+              { page: "owner-requests", icon: Inbox,     bg: "bg-amber-100",   ic: "text-amber-600",   title: "Review Requests", sub: `${summary?.pending ?? 0} pending approval` },
+              { page: "owner-report",   icon: BarChart2, bg: "bg-emerald-100", ic: "text-emerald-600", title: "View Earnings",   sub: "Full earnings report" },
             ].map(({ page, icon: Icon, bg, ic, title, sub }) => (
-              <button key={page} onClick={() => setPage(page)} className="w-full flex items-center gap-3 p-3 hover:bg-stone-50 rounded-xl transition-colors text-left">
-                <div className={`w-9 h-9 ${bg} rounded-xl flex items-center justify-center`}><Icon className={`w-4 h-4 ${ic}`} /></div>
-                <div><p className="text-sm font-medium text-stone-800">{title}</p><p className="text-xs text-stone-400">{sub}</p></div>
+              <button
+                key={page}
+                onClick={() => setPage(page)}
+                className="w-full flex items-center gap-3 p-3 hover:bg-stone-50 rounded-xl transition-colors text-left"
+              >
+                <div className={`w-9 h-9 ${bg} rounded-xl flex items-center justify-center`}>
+                  <Icon className={`w-4 h-4 ${ic}`} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-stone-800">{title}</p>
+                  <p className="text-xs text-stone-400">{sub}</p>
+                </div>
               </button>
             ))}
           </div>

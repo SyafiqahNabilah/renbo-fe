@@ -8,21 +8,31 @@ const PAYMENT_METHODS = [
   { id: "cash",    label: "Cash on Pickup",        emoji: "💵", disabled: false },
 ]
 
+/**
+ * FIX: onConfirm now receives (transactionId, paymentRef) instead of just the ID.
+ * The caller (RenterRequests) must pass both to markTransactionPaid.
+ */
 export default function PaymentModal({ transaction, onClose, onConfirm, loading }) {
-  const [selected, setSelected] = useState("cash")
+  const [selected,   setSelected]   = useState("cash")
+  const [paymentRef, setPaymentRef] = useState("")
 
   if (!transaction) return null
 
-  // totalAmount = dailyRate × totalDays (backend does NOT include deposit in totalAmount)
   const rentalTotal   = Number(transaction.totalAmount   ?? 0)
   const depositAmount = Number(transaction.depositAmount ?? 0)
   const grandTotal    = (rentalTotal + depositAmount).toFixed(2)
 
   const breakdown = [
-    ["Rental (" + (transaction.totalDays ?? "—") + " days)", `RM ${rentalTotal.toFixed(2)}`],
-    ["Deposit (refundable)",   `RM ${depositAmount.toFixed(2)}`],
-    ["Total Payable",          `RM ${grandTotal}`],
+    [`Rental (${transaction.totalDays ?? "—"} days)`, `RM ${rentalTotal.toFixed(2)}`],
+    ["Deposit (refundable)",  `RM ${depositAmount.toFixed(2)}`],
+    ["Total Payable",         `RM ${grandTotal}`],
   ]
+
+  function handleConfirm() {
+    // For cash: use entered ref or fall back to a readable default
+    const ref = paymentRef.trim() || `CASH-${new Date().toISOString().slice(0, 10)}`
+    onConfirm(transaction.transactionID, ref)
+  }
 
   return (
     <div
@@ -66,7 +76,7 @@ export default function PaymentModal({ transaction, onClose, onConfirm, loading 
 
           {/* Payment method */}
           <div>
-            <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-3">Select Payment Method</p>
+            <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-3">Payment Method</p>
             <div className="space-y-2">
               {PAYMENT_METHODS.map(m => (
                 <button
@@ -82,7 +92,9 @@ export default function PaymentModal({ transaction, onClose, onConfirm, loading 
                 >
                   <span className="text-xl">{m.emoji}</span>
                   <div className="flex-1">
-                    <p className={`text-sm font-medium ${selected === m.id && !m.disabled ? "text-orange-700" : "text-stone-700"}`}>{m.label}</p>
+                    <p className={`text-sm font-medium ${selected === m.id && !m.disabled ? "text-orange-700" : "text-stone-700"}`}>
+                      {m.label}
+                    </p>
                     {m.disabled && <p className="text-xs text-stone-400">Coming soon</p>}
                   </div>
                   {selected === m.id && !m.disabled && <CheckCircle className="w-4 h-4 text-orange-500 shrink-0" />}
@@ -91,17 +103,33 @@ export default function PaymentModal({ transaction, onClose, onConfirm, loading 
             </div>
           </div>
 
+          {/* ── FIX: Payment reference input ───────────────────────────── */}
+          <div>
+            <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">
+              Payment Reference <span className="text-stone-400 font-normal normal-case">(optional)</span>
+            </label>
+            <input
+              value={paymentRef}
+              onChange={e => setPaymentRef(e.target.value)}
+              placeholder="e.g. receipt no., transfer ref, or leave blank for cash"
+              className="w-full border border-stone-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            />
+            <p className="text-xs text-stone-400 mt-1">
+              This reference is saved so both parties can verify the payment.
+            </p>
+          </div>
+
           {/* Notice */}
           <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex gap-2.5">
             <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-700 leading-relaxed">
-              Online payment gateway is coming soon. Pay cash on pickup then click <strong>Confirm Payment</strong> to notify the owner.
+              Online gateway coming soon. Pay cash on pickup then confirm here to notify the owner.
             </p>
           </div>
 
           {/* CTA */}
           <button
-            onClick={() => onConfirm(transaction.transactionID)}
+            onClick={handleConfirm}
             disabled={loading}
             className="w-full bg-orange-600 hover:bg-orange-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
           >

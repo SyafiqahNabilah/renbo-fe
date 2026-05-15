@@ -1,23 +1,26 @@
 import {
   LayoutDashboard, Package, Inbox, BarChart2,
-  Search, FileText, Users, Activity,
+  Search, FileText, Users, Activity, UserCircle,
 } from "lucide-react"
 
 export const NAV = {
   Owner: [
-    { id: "owner-dash",     label: "Dashboard",    icon: LayoutDashboard },
-    { id: "owner-items",    label: "My Items",      icon: Package },
-    { id: "owner-requests", label: "Requests",      icon: Inbox },
-    { id: "owner-report",   label: "Earnings",      icon: BarChart2 },
+    { id: "owner-dash",     label: "Dashboard",  icon: LayoutDashboard },
+    { id: "owner-items",    label: "My Items",    icon: Package },
+    { id: "owner-requests", label: "Requests",    icon: Inbox },
+    { id: "owner-report",   label: "Earnings",    icon: BarChart2 },
+    { id: "profile",        label: "Account",     icon: UserCircle },
   ],
   Renter: [
-    { id: "renter-browse",   label: "Browse Items",  icon: Search },
-    { id: "renter-requests", label: "My Requests",   icon: FileText },
+    { id: "renter-browse",   label: "Browse Items", icon: Search },
+    { id: "renter-requests", label: "My Requests",  icon: FileText },
+    { id: "profile",         label: "Account",      icon: UserCircle },
   ],
   Admin: [
-    { id: "admin-dash",  label: "Dashboard",     icon: LayoutDashboard },
-    { id: "admin-users", label: "Users",          icon: Users },
-    { id: "admin-txn",   label: "Transactions",   icon: Activity },
+    { id: "admin-dash",  label: "Dashboard",   icon: LayoutDashboard },
+    { id: "admin-users", label: "Users",        icon: Users },
+    { id: "admin-txn",   label: "Transactions", icon: Activity },
+    { id: "profile",     label: "Account",      icon: UserCircle },
   ],
 }
 

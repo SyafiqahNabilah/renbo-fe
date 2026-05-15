@@ -5,8 +5,8 @@ import { normalizeRole } from "../utils/dataTransform"
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser]   = useState(null)   // { id, name, email, role }
-  const [token, setToken] = useState(null)
+  const [user,    setUser]    = useState(null)   // { id, name, email, role }
+  const [token,   setToken]   = useState(null)
   const [loading, setLoading] = useState(true)
 
   // Restore session on refresh
@@ -28,10 +28,13 @@ export function AuthProvider({ children }) {
   async function login(email, password) {
     const data = await loginApi(email, password)
     const normalizedUser = {
-      id:    data.userId ?? null,   // LoginResponseDto uses "userId"
+      id:    data.userId ?? null,
       name:  data.fullName,
       email: data.email ?? email,
-      role:  normalizeRole(data.role), // OWNER → Owner
+      role:  normalizeRole(data.role),
+      phoneNo: data.phoneNo,
+      noAccount: data.noAccount,
+      address: data.address
     }
     setToken(data.token)
     setUser(normalizedUser)
@@ -47,8 +50,22 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("renbo_user")
   }
 
+  /**
+   * Patches the in-memory + localStorage user after a profile update.
+   * Only the fields present in `patch` are changed.
+   * Called by ProfilePage after a successful PUT /user/profile.
+   */
+  function updateUser(patch) {
+    setUser(prev => {
+      if (!prev) return prev
+      const updated = { ...prev, ...patch }
+      localStorage.setItem("renbo_user", JSON.stringify(updated))
+      return updated
+    })
+  }
+
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, loading, updateUser }}>
       {children}
     </AuthContext.Provider>
   )

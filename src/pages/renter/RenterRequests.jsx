@@ -32,10 +32,10 @@ export default function RenterRequests() {
       .finally(() => setLoading(false))
   }, [token, user?.id])
 
-  async function handleConfirmPayment(transactionId) {
+  async function handleConfirmPayment(transactionId, paymentRef) {
     setPayLoading(true)
     try {
-      await markTransactionPaid(token, transactionId)
+      await markTransactionPaid(token, transactionId, paymentRef)
       setTransactions(prev =>
         prev.map(t => t.transactionID === transactionId ? { ...t, paymentStatus: "Paid" } : t)
       )

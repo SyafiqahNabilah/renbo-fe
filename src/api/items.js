@@ -28,6 +28,31 @@ export async function fetchItemDetails(token, itemId) {
   return parseApiResponse(res, "Failed to fetch item details")
 }
 
+/**
+ * GET /item/search?keyword=&category=&minPrice=&maxPrice=
+ * All params are optional — omit (pass null/undefined) to skip that filter.
+ */
+export async function searchItems(token, { keyword, category, minPrice, maxPrice } = {}) {
+  const params = new URLSearchParams()
+  if (keyword)  params.set("keyword",  keyword)
+  if (category && category !== "All") params.set("category", category)
+  if (minPrice != null) params.set("minPrice", String(minPrice))
+  if (maxPrice != null) params.set("maxPrice", String(maxPrice))
+
+  const url = `${BASE_URL}/item/search${params.toString() ? `?${params}` : ""}`
+  const res  = await fetch(url, { headers: authHeaders(token) })
+  return parseApiResponse(res, "Search failed")
+}
+
+/**
+ * GET /item/categories
+ * Returns a string[] of distinct category values in use.
+ */
+export async function fetchCategories(token) {
+  const res = await fetch(`${BASE_URL}/item/categories`, { headers: authHeaders(token) })
+  return parseApiResponse(res, "Failed to fetch categories")
+}
+
 // POST /item/create — multipart/form-data
 export async function createItem(token, payload) {
   const res = await fetch(`${BASE_URL}/item/create`, {
@@ -38,9 +63,7 @@ export async function createItem(token, payload) {
   return parseApiResponse(res, "Failed to create item")
 }
 
-// PUT /item/update/{id} — also multipart/form-data
-// Backend uses @ModelAttribute (not @RequestBody), ItemRequestDto has MultipartFile fields
-// Images are optional on update — only sent if new files are selected
+// PUT /item/update/{id}
 export async function updateItem(token, itemId, payload) {
   const res = await fetch(`${BASE_URL}/item/update/${itemId}`, {
     method: "PUT",
@@ -56,7 +79,6 @@ export async function deleteItem(token, itemId) {
     method: "DELETE",
     headers: authHeaders(token),
   })
-  // Backend returns plain text "Successful deleted." — parseApiResponse handles non-JSON ok response
   if (!res.ok) {
     const text = await res.text().catch(() => "")
     throw new Error(text || "Failed to delete item")
